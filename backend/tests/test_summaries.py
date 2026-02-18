@@ -1,7 +1,7 @@
 import pytest
 
-
 # ============== CREATE ==============
+
 
 @pytest.mark.asyncio
 async def test_create_summary(client):
@@ -35,6 +35,7 @@ async def test_create_summary_invalid_url(client):
 
 
 # ============== READ ==============
+
 
 @pytest.mark.asyncio
 async def test_read_summary(client):
@@ -75,6 +76,7 @@ async def test_read_all_summaries(client):
 
 # ============== UPDATE ==============
 
+
 @pytest.mark.asyncio
 async def test_update_summary(client):
     """Test updating a summary."""
@@ -107,6 +109,7 @@ async def test_update_summary_not_found(client):
 
 # ============== DELETE ==============
 
+
 @pytest.mark.asyncio
 async def test_delete_summary(client):
     """Test deleting a summary."""
@@ -132,4 +135,3 @@ async def test_delete_summary_not_found(client):
     """Test deleting non-existent summary returns 404."""
     response = await client.delete("/summaries/99999/")
     assert response.status_code == 404
-

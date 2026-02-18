@@ -25,6 +25,7 @@ async def create_summary(payload: SummaryPayloadSchema):
         summary=summary.summary,
     )
 
+
 @router.get("/{id}/", response_model=SummaryResponseSchema)
 async def read_summary(id: int):
     """

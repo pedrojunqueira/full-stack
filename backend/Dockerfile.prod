@@ -1,0 +1,60 @@
+# ============================================
+# Stage 1: Builder
+# ============================================
+FROM python:3.13-slim AS builder
+
+WORKDIR /usr/src/app
+
+# Prevent Python from writing .pyc files
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install UV
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-cache
+
+# Copy application code
+COPY . .
+
+# ============================================
+# Stage 2: Production
+# ============================================
+FROM python:3.13-slim
+
+WORKDIR /usr/src/app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy UV and application from builder
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=builder /usr/src/app /usr/src/app
+
+# Create non-root user for security with home directory
+RUN addgroup --system app && adduser --system --group app --home /home/app
+RUN chown -R app:app /usr/src/app
+USER app
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/ping || exit 1
+
+# Start the application
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
