@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
-from config import Settings
+from app.config import get_settings
 
 router = APIRouter()
 
 
 @router.get("/ping")
 async def pong():
-    return {"ping": "pong!", "environment": Settings.environment}
+    return {"ping": "🏓", 
+            "environment": get_settings().environment}

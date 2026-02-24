@@ -56,5 +56,13 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ping || exit 1
 
-# Start the application
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Copy entrypoint script
+COPY entrypoint.sh /usr/src/app/entrypoint.sh
+
+# Switch to root temporarily to set permissions
+USER root
+RUN chmod +x /usr/src/app/entrypoint.sh
+USER app
+
+# Use entrypoint (replaces CMD - entrypoint.sh starts uvicorn)
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
