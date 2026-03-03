@@ -1,0 +1,68 @@
+name: 🗑️ Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to destroy"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+          - staging
+          - prod
+      confirm:
+        description: 'Type "DESTROY" to confirm'
+        required: true
+
+jobs:
+  destroy:
+    name: "🗑️ Destroy ${{ github.event.inputs.environment }}"
+    runs-on: ubuntu-latest
+
+    # Extra protection for production (requires GitHub environment "production" if configured)
+    environment: ${{ github.event.inputs.environment == 'production' && 'production' || '' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Validate confirmation
+        if: github.event.inputs.confirm != 'DESTROY'
+        run: |
+          echo "❌ Confirmation failed. Please type 'DESTROY' to confirm."
+          exit 1
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Azure Developer CLI (azd)
+        run: |
+          curl -fsSL https://aka.ms/install-azd.sh | bash
+          echo "$HOME/.azd/bin" >> $GITHUB_PATH
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+
+      - name: Destroy Infrastructure
+        run: |
+          azd auth login --client-id "$SP_CLIENT_ID" --client-secret "$SP_CLIENT_SECRET" --tenant-id "$SP_TENANT_ID"
+          azd env select "$AZURE_ENV_NAME" || azd env new "$AZURE_ENV_NAME"
+          azd down --force --purge --no-prompt
+        env:
+          SP_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          SP_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SP_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ENV_NAME: ${{ github.event.inputs.environment }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_LOCATION: australiaeast
+          AZURE_APP_NAME: full-stack
+
+      - name: Cleanup complete
+        run: |
+          echo "✅ Environment '${{ github.event.inputs.environment }}' has been destroyed."

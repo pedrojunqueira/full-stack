@@ -1,0 +1,70 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: "✅ Validate PR"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --extra test --extra dev
+
+      - name: Run linting
+        working-directory: ./backend
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Run tests
+        working-directory: ./backend
+        run: uv run pytest --cov=app --cov-fail-under=80 -v
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/backend_dev
+          DATABASE_TEST_URL: postgres://postgres:postgres@localhost:5432/backend_test
+          TESTING: 1
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ACTIONS_PAT }}
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${status} PR Validation: ${{ job.status }}`
+            })
