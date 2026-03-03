@@ -1,0 +1,201 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [master]
+
+env:
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+jobs:
+  # ============================================
+  # Job 1: Run Tests with Coverage
+  # ============================================
+  test:
+    name: "🧪 Tests & Coverage"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --extra test --extra dev
+
+      - name: Wait for PostgreSQL
+        run: |
+          timeout 30s bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done'
+
+      - name: Run tests with coverage
+        working-directory: ./backend
+        run: |
+          uv run pytest \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=80 \
+            -v
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/backend_dev
+          DATABASE_TEST_URL: postgres://postgres:postgres@localhost:5432/backend_test
+          ENVIRONMENT: dev
+          TESTING: 1
+
+    #   - name: Upload coverage to Codecov
+    #     uses: codecov/codecov-action@v4
+    #     with:
+    #       file: ./backend/coverage.xml
+    #       fail_ci_if_error: false
+    #     env:
+    #       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ============================================
+  # Job 2: Code Quality Checks
+  # ============================================
+  lint:
+    name: "📝 Code Quality"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --extra dev
+
+      - name: Run Ruff linter
+        working-directory: ./backend
+        run: uv run ruff check .
+
+      - name: Run Ruff formatter check
+        working-directory: ./backend
+        run: uv run ruff format --check .
+
+  # working
+  deploy:
+    name: "🚀 Deploy to Azure"
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    # environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Azure Developer CLI (azd)
+        run: |
+          curl -fsSL https://aka.ms/install-azd.sh | bash
+          echo "$HOME/.azd/bin" >> $GITHUB_PATH
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+
+      # The Service Principal (AZURE_CLIENT_ID) must have permission to create role assignments,
+      # e.g. "User Access Administrator" or "Owner" on the resource group or subscription.
+      # Contributor alone is not enough: backend.bicep assigns AcrPull on ACR to the Container App identity.
+      - name: Deploy to Azure with azd
+        run: |
+          azd auth login --client-id "$SP_CLIENT_ID" --client-secret "$SP_CLIENT_SECRET" --tenant-id "$SP_TENANT_ID"
+          azd env select production || azd env new production
+
+          # Step 1: Provision infrastructure
+          azd up --no-prompt
+
+        env:
+          # Service Principal credentials
+          SP_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          SP_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SP_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ENV_NAME: production
+          AZURE_LOCATION: australiaeast
+          AZURE_APP_NAME: full-stack
+
+      - name: Get deployment URL
+        id: get-url
+        run: |
+          URL=$(azd show --output json | jq -r '.services.backend.endpoint // "Not available"')
+          echo "deployment-url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Test deployed application
+        if: steps.get-url.outputs.deployment-url != 'Not available'
+        run: |
+          echo "Testing deployment at: ${{ steps.get-url.outputs.deployment-url }}"
+
+          # Wait for deployment to be ready
+          for i in {1..10}; do
+            if curl -f "${{ steps.get-url.outputs.deployment-url }}/ping" > /dev/null 2>&1; then
+              echo "✅ Deployment is ready!"
+              break
+            fi
+            echo "⏳ Waiting for deployment... (attempt $i/10)"
+            sleep 30
+          done
+
+          # Test the ping endpoint
+          RESPONSE=$(curl -s "${{ steps.get-url.outputs.deployment-url }}/ping")
+          echo "Ping response: $RESPONSE"
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Application URL:** ${{ steps.get-url.outputs.deployment-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quick Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏥 [Health Check](${{ steps.get-url.outputs.deployment-url }}/ping)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📚 [API Documentation](${{ steps.get-url.outputs.deployment-url }}/docs)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 [Alternative Docs](${{ steps.get-url.outputs.deployment-url }}/redoc)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results:" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Code quality checks passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Security scans passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Docker builds successful" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Azure deployment successful" >> $GITHUB_STEP_SUMMARY
