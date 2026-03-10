@@ -14,3 +14,10 @@ class SummaryResponseSchema(BaseModel):
 class SummaryUpdatePayloadSchema(BaseModel):
     url: AnyHttpUrl
     summary: str | None = None
+
+
+class CurrentUserSchema(BaseModel):
+    """Current authenticated user from Azure AD token."""
+    email: str
+    azure_oid: str
+    name: str | None = None

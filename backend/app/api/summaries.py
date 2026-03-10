@@ -1,7 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api import crud
+from app.auth import get_current_user
 from app.models.pydantic import (
+    CurrentUserSchema,
     SummaryPayloadSchema,
     SummaryResponseSchema,
     SummaryUpdatePayloadSchema,
@@ -11,11 +15,14 @@ router = APIRouter()
 
 
 @router.post("/", response_model=SummaryResponseSchema, status_code=201)
-async def create_summary(payload: SummaryPayloadSchema):
+async def create_summary(
+    payload: SummaryPayloadSchema,
+    current_user: Annotated[CurrentUserSchema, Depends(get_current_user)],
+):
     """
     Create a new text summary.
 
-    - **url**: The URL to summarize (must be valid HTTP/HTTPS URL)
+    **Requires authentication.**
     """
     summary_id = await crud.create_summary(payload)
     summary = await crud.get_summary(summary_id)
@@ -27,11 +34,14 @@ async def create_summary(payload: SummaryPayloadSchema):
 
 
 @router.get("/{id}/", response_model=SummaryResponseSchema)
-async def read_summary(id: int):
+async def read_summary(
+    id: int,
+    current_user: Annotated[CurrentUserSchema, Depends(get_current_user)],
+):
     """
     Get a summary by ID.
 
-    - **id**: The unique identifier of the summary
+    **Requires authentication.**
     """
     summary = await crud.get_summary(id)
     if not summary:
@@ -44,8 +54,14 @@ async def read_summary(id: int):
 
 
 @router.get("/", response_model=list[SummaryResponseSchema])
-async def read_all_summaries():
-    """Get all summaries."""
+async def read_all_summaries(
+    current_user: Annotated[CurrentUserSchema, Depends(get_current_user)],
+):
+    """
+    Get all summaries.
+
+    **Requires authentication.**
+    """
     summaries = await crud.get_all_summaries()
     return [
         SummaryResponseSchema(
@@ -58,13 +74,15 @@ async def read_all_summaries():
 
 
 @router.put("/{id}/", response_model=SummaryResponseSchema)
-async def update_summary(id: int, payload: SummaryUpdatePayloadSchema):
+async def update_summary(
+    id: int,
+    payload: SummaryUpdatePayloadSchema,
+    current_user: Annotated[CurrentUserSchema, Depends(get_current_user)],
+):
     """
     Update a summary.
 
-    - **id**: The unique identifier of the summary
-    - **url**: New URL value
-    - **summary**: New summary text (optional)
+    **Requires authentication.**
     """
     summary = await crud.update_summary(id, str(payload.url), payload.summary)
     if not summary:
@@ -77,11 +95,14 @@ async def update_summary(id: int, payload: SummaryUpdatePayloadSchema):
 
 
 @router.delete("/{id}/")
-async def delete_summary(id: int):
+async def delete_summary(
+    id: int,
+    current_user: Annotated[CurrentUserSchema, Depends(get_current_user)],
+):
     """
     Delete a summary.
 
-    - **id**: The unique identifier of the summary to delete
+    **Requires authentication.**
     """
     deleted = await crud.delete_summary(id)
     if not deleted:

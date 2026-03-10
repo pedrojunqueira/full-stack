@@ -9,6 +9,7 @@ dependencies = [
     "tortoise-orm[asyncpg]>=0.23.0",
     "pydantic-settings>=2.6.0",
     "aerich>=0.8.0",
+    "fastapi-azure-auth>=5.0.0",
 ]
 
 [project.optional-dependencies]

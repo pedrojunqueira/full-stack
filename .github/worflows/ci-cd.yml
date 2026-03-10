@@ -1,8 +1,11 @@
 name: CI/CD Pipeline
 
+# on:
+#   push:
+#     branches: [master]
+
 on:
-  push:
-    branches: [master]
+  workflow_dispatch:
 
 env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}

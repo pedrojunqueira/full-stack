@@ -13,6 +13,12 @@ services:
       - TESTING=0
       - DATABASE_URL=postgres://postgres:postgres@backend-db:5432/backend_dev
       - DATABASE_TEST_URL=postgres://postgres:postgres@backend-db:5432/backend_test
+      # Azure Authentication - Replace with your values!
+      - TENANT_ID=078c6c18-7434-4931-81cd-7b9603fda5a2
+      - APP_CLIENT_ID=59d4d018-5415-4920-ade2-fe76ca4bc41e
+      - OPENAPI_CLIENT_ID=7329e158-2571-4678-bf63-55431a9bfc9e
+      - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:8004"]
+      - SCOPE_DESCRIPTION=user_impersonation
     depends_on:
       - backend-db
 
